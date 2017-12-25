@@ -1,28 +1,28 @@
-//////////////////////////////////////////////////////////////////////
-//                                           MikeJaras 2017-12-22   //
-//		Originally J.Oinonen 2005-10-05								//
-//                                                                  //
-// Thermostat using PIC 16f628 and DS18B20 thermometer				//
-// 									 12 bit resolution				//
-// Possible future improvements:                                    //
+///////////////////////////////////////////////////////////////////////
+//                                           MikeJaras 2017-12-22    //
+//		Originally J.Oinonen 2005-10-05								 //
+//                                                                   //
+// Thermostat using PIC 16f628 and DS18B20 thermometer				 //
+// 									 12 bit resolution				 //
+// Possible future improvements:                                     //
 // *Retrieving FAN ON temperature from EEPROM so that                // 
 //  changes are not lost in a power failure.  - Completed -          //
-//                                                                  //
-// *Add some logic to allow negative temperatures on max/min        //
-//  Temperatures.                                                   //
-//                                                                  //
-// *Skip leading zeros on max/min menu.                             //
-//                                                                  //
-// *Add a routine for handling temperature variables with the       //
-//  negative bit set in the LSB.                                    //
-//                                                                  //
-// *Improve accuracy on the FAN on temp and max min. Point above is //
-//  Requred for this. When the variables are stored currently       //
-//  The 0.5 C bit is trashed.                                       //
-//                                                                  //
-// Compiles with B. Knudsen CC5X 3.6 free version					//
-//////////////////////////////////////////////////////////////////////
-
+//                                                                   //
+// *Add some logic to allow negative temperatures on max/min         //
+//  Temperatures.                                                    //
+//                                                                   //
+// *Skip leading zeros on max/min menu.                              //
+//                                                                   //
+// *Add a routine for handling temperature variables with the        //
+//  negative bit set in the LSB.                                     //
+//                                                                   //
+// *Improve accuracy on the FAN on temp and max min. Point above is  //
+//  required for this. When the variables are stored currently       //
+//  The 0.5 C bit is trashed.                                        //
+//                                                                   //
+// Compiles with B. Knudsen CC5X 3.6 free version					 //
+///////////////////////////////////////////////////////////////////////
+                                                                     
 #include "16F628.h"
 #include "int16Cxx.h"
 
@@ -32,6 +32,7 @@
 // 2170	100001.0111.0000 bit7 LVP controls PORTB.4
 #pragma bit MENU 	@ PORTB.1	// Menu-button
 #pragma bit REDLED 	@ PORTB.4	// The REDLED symbolizes a fan
+#pragma bit LED 	@ PORTB.2	// The REDLED symbolizes a fan
 #pragma bit S1 		@ PORTB.6	// Increase highest temp allowed
 #pragma bit S3 		@ PORTB.7	// decrease highest temp allowed
 
@@ -101,7 +102,7 @@ void putchar_eedata( char data, char address );
 
 
 char buffer[12];		// Used to store 12 bytes read from DS18B20
-char temperature;		// Same as above, only need one of these global. Future imrovement.
+char temperature;		// Same as above, only need one of these global. Future improvement.
 char s[11];				// S[11] is used by most of the string handling routines, see also ascnum.c
 #include "math16.h"
 #include "ascnum.c"		// String handling - chartoa inttoa unslongtoa longtoa atochar
@@ -116,7 +117,9 @@ void main( void){
 	
 						// Use EEPROM
 	fantemp=getchar_eedata(0);
-		
+	if (fantemp==255)
+		fantemp=20;
+	// fantemp=fantemp&99; // Remove number above 99. I.e. 130->30.
 	// fantemp=26;		// Could have this saved in EEPROM 
 						// and retrieved at each startup.
 						// This way settings would not be lost
@@ -231,10 +234,12 @@ void main( void){
 		if(temperature<lowest)
 			lowest=temperature;
 		
+
 		if(temperature>=fantemp)		// If temperature over highest permitted start fan
 			REDLED=1;					// REDLED symbolizes a Fan
-		else
+		else{
 			REDLED=0;
+		}
 		
 		RBIE     = 1;   		// Turn on interrupts.
 		GIE      = 1;   				
@@ -277,12 +282,12 @@ void readtemp() {
 }
 
 void print_temp() {
-char lsb;
-char msb;
+	char lsb;
+	char msb;
 
-RS = 1;  // LCD in character-mode
-char i;
-if(buffer[1].3==1)						// The bit determines the sign of the temperature
+	RS = 1;  // LCD in character-mode
+	char i;
+	if(buffer[1].3==1)					// The bit determines the sign of the temperature
 	{	lcd_putchar('-');				// Display - sign
 		temperature=buffer[0];			// The temperature is in the LSB
 		temperature=(temperature^0xFF);	// Complement (flip zero to one and vice versa) of the negative temperature
@@ -291,38 +296,32 @@ if(buffer[1].3==1)						// The bit determines the sign of the temperature
 		chartoa(temperature);		
 
 		// display the 8 char text1() sentence
-		for(i=0; i<3; i++) lcd_putchar(s[i]);
+		for(i=0; i<3; i++) 
+			lcd_putchar(s[i]);
 	}
-else
-//0x6C + 0x01 ->  	0000.0001_0110.1100 
-//					buffer[1]_buffer[0]	
+	else {
 		lsb=buffer[0]>>4;
 		msb=buffer[1]<<4;
-
 		temperature=msb+lsb;
 
-	{	lcd_putchar('+');				// Display + sign
-		//temperature=buffer[0]>>1;		// Divide by 2
+		lcd_putchar('+');				// Display + sign
 		chartoa(temperature);			// Convert char to ascii
-
 		for(i=1; i<3; i++) 		
-		
-		lcd_putchar(s[i]);  
+			lcd_putchar(s[i]);  
 
-	  //Display the temperature on the LCD
+		//Display the temperature on the LCD
 	}
- 
-if(buffer[0].3==1)						// 0000 0001 = 0.5 C
-	{
-		lcd_putchar('.');
-		lcd_putchar('5');
-	}
-else									// 0000 0000 = 0.0 C
-	{
-		lcd_putchar('.');
-		lcd_putchar('0');
-	}
-
+	 
+	if(buffer[0].3==1)						// 0000 0001 = 0.5 C
+		{
+			lcd_putchar('.');
+			lcd_putchar('5');
+		}
+	else									// 0000 0000 = 0.0 C
+		{
+			lcd_putchar('.');
+			lcd_putchar('0');
+		}
 }
  
  
@@ -461,9 +460,9 @@ char getchar_eedata( char address ) {
 //Flash LED n times 	
 void blink(uns8 blinkN)	{
 		for (p=0; p<blinkN; p++){
-				REDLED=0;
+				LED=0;
 				delay(250);
-				REDLED=1;
+				LED=1;
 				delay(250);
 		}
 }		
@@ -471,9 +470,9 @@ void blink(uns8 blinkN)	{
 //Flash LED on problem 	
 void problem( void ) {
 		while(1){
-				REDLED=0;
+				LED=0;
 				delay(50);
-				REDLED=1;
+				LED=1;
 				delay(50);
 		}	
 }
@@ -498,7 +497,7 @@ void problem( void ) {
 DS18B20(2)-|RB0              RB7/PGD|---    PK2(4)
     SW1 ->-|RB1              RB6/PGC|---    PK2(5)
     LED -<-|RB2                  RB5|->- RS
-     EN -<-|RB3                  RB4|->- 
+     EN -<-|RB3                  RB4|->- LED
            |________________________| 
    
 
