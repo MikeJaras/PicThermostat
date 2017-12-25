@@ -36,9 +36,9 @@
 #pragma bit S3 		@ PORTB.7	// decrease highest temp allowed
 
 
-
-char hightemp;			// Global variable to store highest temperature
-char lowtemp;			// Lowest, see above
+bit savetoeeprom;
+char fantemp;			// Global variable to store highest temperature
+// char lowtemp;			// Lowest, see above (not yet implemented)
 
  
 //////////////////////////////////////////////////////////////////////
@@ -56,18 +56,19 @@ interrupt int_server( void ){
 	if( RBIF == 1 )  
 		{              
 		if(S3)
-			{	hightemp++;
+			{	fantemp++;
 			for(i =0; i < 50; i++ )    		// Debounce
 			for(j =0; j < 250; j++ );
 			}
 	
 		if(S1)
-				{	hightemp--;
+				{	fantemp--;
 				for(i =0; i < 50; i++ )    		// Debounce
 				for(j =0; j < 250; j++ );
 			}
 			RBIF = 0;  
 		}
+	savetoeeprom=1;	
 	int_restore_registers					// W, STATUS (and PCLATH)
 }
 
@@ -94,10 +95,12 @@ char text4( char );
 void blink(uns8 blinkN);
 void problem( void );
 uns8 p;							//Variable used in blink
+char getchar_eedata( char address );
+void putchar_eedata( char data, char address );
 
 
 
-char buffer[12];			// Used to store 12 bytes read from DS18B20
+char buffer[12];		// Used to store 12 bytes read from DS18B20
 char temperature;		// Same as above, only need one of these global. Future imrovement.
 char s[11];				// S[11] is used by most of the string handling routines, see also ascnum.c
 #include "math16.h"
@@ -110,11 +113,14 @@ void main( void){
 	char highest=22;				
 	char lowest=22;
 	char i,n,x;			// Some unused variables, needs cleaning up.
+	
+						// Use EEPROM
+	fantemp=getchar_eedata(0);
 		
-	hightemp=26;		// Could have this saved in EEPROM 
-					// and retrieved at each startup.
-					// This way settings would not be lost
-					// at power failure. Future improvement.
+	// fantemp=26;		// Could have this saved in EEPROM 
+						// and retrieved at each startup.
+						// This way settings would not be lost
+						// at power failure. Future improvement.
 	
 	OPTION.7 = 0;     // internal pullup resistors on 
 
@@ -146,7 +152,12 @@ void main( void){
 	
 	while(1){	// Read and present temp, wait for button
 
+		if (savetoeeprom) {
+			putchar_eedata(fantemp,00);
+			savetoeeprom=0;
+		}
 		readtemp();
+		
 
 		if(MENU){						// If NOT menu button pressed; 	display main menu
 
@@ -167,12 +178,12 @@ void main( void){
 			for(i=0; i<8; i++) 
 				lcd_putchar(text2(i)); 	// Display "Fan ON: "
 
-			chartoa(hightemp);			// Convert hightemp to ascii
+			chartoa(fantemp);			// Convert fantemp to ascii
 			lcd_putchar('+');			// Plus sign. 
 										// Future improvement: logic to determine negative temperatures
 
 			for(i=1; i<3; i++){			// Don't display leading zero (i=1)
-										// Need registered Knudsen Compiler for this.
+										// Need registered Knudsen Compiler for this. ???
 				lcd_putchar(s[i]);  
 			}
 			
@@ -220,8 +231,8 @@ void main( void){
 		if(temperature<lowest)
 			lowest=temperature;
 		
-		if(temperature>=hightemp)		// If temperature over highest permitted start fan
-			REDLED=1;			// REDLED symbolizes a Fan
+		if(temperature>=fantemp)		// If temperature over highest permitted start fan
+			REDLED=1;					// REDLED symbolizes a Fan
 		else
 			REDLED=0;
 		
@@ -240,8 +251,7 @@ void main( void){
 // 12 bytes are read but only the 2 first are used.                	//
 // The result is placed in buffer[].                               	//
 //////////////////////////////////////////////////////////////////////
-void readtemp()
-{
+void readtemp() {
 	char i,n;
     Reset();			// Reset is required before any command is issued
 	Write(0xCC);  		// Skip Rom
@@ -266,8 +276,7 @@ void readtemp()
 
 }
 
-void print_temp()
-{
+void print_temp() {
 char lsb;
 char msb;
 
@@ -316,31 +325,34 @@ else									// 0000 0000 = 0.0 C
 
 }
  
-
-// this is the way to store a sentence
-char text1( char x)   // temp is
-{
+ 
+/* ----------------------------------- */
+/* this is the way to store a sentence */
+/* ----------------------------------- */
+// - temp is
+char text1( char x) {
    skip(x); /* internal function CC5x.  */
    #pragma return[] = "Temp is:"    // 8 chars max!
 }
 
-char text2( char x)   // fan on
-{
+// - fan on
+char text2( char x) {
    skip(x); /* internal function CC5x.  */
    #pragma return[] = "Fan ON: "    // 8 chars max!
 }
 
-char text3( char x)   // highest
-{
+// - highest
+char text3( char x) {
    skip(x); /* internal function CC5x.  */
    #pragma return[] = "Highest:"    // 8 chars max!
 }
 
-char text4( char x)   // lowest
-{
+// - lowest
+char text4( char x) {
    skip(x); /* internal function CC5x.  */
    #pragma return[] = "Lowest: "    // 8 chars max!
 }
+
 
 // must be run once before using the display
 void lcd_init( void ) {
@@ -390,7 +402,7 @@ void lcd_init_2( void ) {
 }
 
  
-void lcd_putchar( char data ){
+void lcd_putchar( char data ) {
   // must set LCD-mode before calling this function!
   // RS = 1 LCD in character-mode
   // RS = 0 LCD in command-mode
@@ -412,6 +424,38 @@ void lcd_putchar( char data ){
   nop();
   EN = 1;
   delay(5);
+}
+
+
+void putchar_eedata( char data, char address ) {
+      /* Put char in specific EEPROM-address */
+      /* Write EEPROM-data sequence                           */
+      EEADR = address;    /* EEPROM-data address 0x00 => 0x40 */
+      // EEPGD = 0;          /* Data, not Program memory  (16690 only )  */  
+      EEDATA = data;      /* data to be written               */
+      WREN = 1;           /* write enable                     */
+      EECON2 = 0x55;      /*  first Byte in command sequence  */
+      EECON2 = 0xAA;      /* second Byte in command sequence  */
+      WR = 1;             /* write                            */
+      while( EEIF == 0) ; /* wait for done (EEIF=1)           */
+      WR = 0;
+      WREN = 0;           /* write disable - safety first    */
+      EEIF = 0;           /* Reset EEIF bit in software      */
+      /* End of write EEPROM-data sequence                   */
+}
+
+
+char getchar_eedata( char address ) {
+      /* Get char from specific EEPROM-address */
+      /* Start of read EEPROM-data sequence                */
+      char temp;
+      EEADR = address;  /* EEPROM-data address 0x00 => 0x40  */ 
+      // EEPGD = 0;       /* Data not Program -memory         */      
+      RD = 1;          /* Read                             */
+      temp = EEDATA;
+      RD = 0;
+      return temp;     /* data to be read                  */
+      /* End of read EEPROM-data sequence                  */  
 }
 
 //Flash LED n times 	
