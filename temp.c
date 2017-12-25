@@ -5,8 +5,8 @@
 // Thermostat using PIC 16f628 and DS18B20 thermometer				//
 // 									 12 bit resolution				//
 // Possible future improvements:                                    //
-// *Retriving FAN ON temperature from EEPROM so that changes are not// 
-//  lost in a power failure.                                        //
+// *Retrieving FAN ON temperature from EEPROM so that                // 
+//  changes are not lost in a power failure.  - Completed -          //
 //                                                                  //
 // *Add some logic to allow negative temperatures on max/min        //
 //  Temperatures.                                                   //
