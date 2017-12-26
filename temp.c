@@ -89,17 +89,17 @@ void lcd_putchar( char );
 void chartoa( char );
 void print_temp( void );
 void readtemp( void );
+void readromcode( void );
 char text1( char );
 char text2( char );
 char text3( char );
 char text4( char );
+char hexchar( char );
 void blink(uns8 blinkN);
 void problem( void );
 uns8 p;							//Variable used in blink
 char getchar_eedata( char address );
 void putchar_eedata( char data, char address );
-
-
 
 char buffer[12];		// Used to store 12 bytes read from DS18B20
 char temperature;		// Same as above, only need one of these global. Future improvement.
@@ -114,16 +114,13 @@ void main( void){
 	char highest=22;				
 	char lowest=22;
 	char i,n,x;			// Some unused variables, needs cleaning up.
-	
+	char lsb,msb;
+	char t1,t2;
 						// Use EEPROM
 	fantemp=getchar_eedata(0);
-	if (fantemp==255)
+	if (fantemp==255)	// 0xFF is value when chip is programmed.
 		fantemp=20;
-	// fantemp=fantemp&99; // Remove number above 99. I.e. 130->30.
-	// fantemp=26;		// Could have this saved in EEPROM 
-						// and retrieved at each startup.
-						// This way settings would not be lost
-						// at power failure. Future improvement.
+
 	
 	OPTION.7 = 0;     // internal pullup resistors on 
 
@@ -147,7 +144,7 @@ void main( void){
 		problem();
 		
 	
-	// trigger analyzer
+	// trigger logic analyzer (Pulseview was used)
 	delay(2);
 	PORTB.2=1;		// To trigger analyzer
 	delay(1);
@@ -155,12 +152,12 @@ void main( void){
 	
 	while(1){	// Read and present temp, wait for button
 
-		if (savetoeeprom) {
-			putchar_eedata(fantemp,00);
-			savetoeeprom=0;
-		}
-		readtemp();
+		if (savetoeeprom) {				// Store value in eeprom if new value is 
+			putchar_eedata(fantemp,00);	// set in interrupt routine.
+			savetoeeprom=0;				//
+		}								//
 		
+		readtemp();						// Get temperature
 
 		if(MENU){						// If NOT menu button pressed; 	display main menu
 
@@ -172,7 +169,7 @@ void main( void){
 			   lcd_putchar(text1(i));
 
 			print_temp();				// Display the temperature
-			lcd_putchar(0b11011111);	//Centigrade character
+			lcd_putchar(0b11011111);	// Centigrade character
 			lcd_putchar('C');			// 'C'
 			lcd_putchar(' ');
 			RS = 0;  					// LCD in command-mode
@@ -194,9 +191,9 @@ void main( void){
 			lcd_putchar('0');
 			lcd_putchar(0b11011111);	// Centigrade character
 			lcd_putchar('C');
-			lcd_putchar(' ');			// Overvrite text in case menu 2 left any garbage
+			lcd_putchar(' ');			// Overwrite text in case menu 2 left any garbage
 		}
-		else{							// If Menu pressed;				display max/min temperatures
+		else{							// If Menu pressed, display max/min temperatures
 			RS = 0;						// LCD in command-mode
 			lcd_putchar(0x02);			// Reposition to beginning of first line
 			RS=1;
@@ -212,6 +209,7 @@ void main( void){
 			lcd_putchar('0');
 			lcd_putchar(0b11011111);	//Centigrade character
 			lcd_putchar('C');
+			lcd_putchar(' ');
 			RS = 0;  					// LCD in command-mode
 			lcd_putchar(0xC0);			// Reposition to beginning of second line
 			RS=1;
@@ -227,6 +225,41 @@ void main( void){
 			lcd_putchar('0');
 			lcd_putchar(0b11011111);	//Centigrade character
 			lcd_putchar('C');
+			// lcd_putchar(' ');
+			
+			// print rom code
+			if(1) {
+				delay(250);			//
+				delay(250);     	//
+				delay(250);			//
+				
+				readromcode();
+					
+				RS = 0;  					// LCD in command-mode
+				lcd_putchar(0x02);			// Reposition to beginning of first line
+				RS=1;
+
+				for(x=0; x<8; x++){			// Display 6 byte rom code"
+					lsb=buffer[x]&0x0F;
+					msb=buffer[x]>>4;
+					t1=hexchar(lsb);
+					t2=hexchar(msb);
+					lcd_putchar(t2);
+					lcd_putchar(t1);
+				}
+				
+				RS = 0;  					// LCD in command-mode
+				lcd_putchar(0xC0);			// Reposition to beginning of second line
+				RS=1;
+				
+				for(i=0; i<16; i++) 
+				  lcd_putchar(' ');	//
+		  
+				delay(250);			//
+				delay(250);     	//
+				delay(250);			//
+				
+			}
 		}
 
 		if(temperature>highest)		
@@ -252,7 +285,7 @@ void main( void){
  
 
 //////////////////////////////////////////////////////////////////////
-// This function Reads a temperature from the DS18B20.             	//
+// This function reads a temperature from the DS18B20.             	//
 // 12 bytes are read but only the 2 first are used.                	//
 // The result is placed in buffer[].                               	//
 //////////////////////////////////////////////////////////////////////
@@ -278,7 +311,6 @@ void readtemp() {
 		n=Read();			// n = the read byte, one of 12
 		buffer[i]=n;
 	}
-
 }
 
 void print_temp() {
@@ -324,10 +356,25 @@ void print_temp() {
 		}
 }
  
- 
+//////////////////////////////////////////////////////////////////////
+// This function reads the unique code from the DS18B20.          	//
+// The result is placed in buffer[].                               	//
+//////////////////////////////////////////////////////////////////////
+void readromcode() {
+	char i,n;
+    Reset();			// Reset is required before any command is issued
+	Write(0x33);		// Tell DS18B20 to send its 64-bit ROM code
+
+	for(i=0; i<8 ;i++){	// Read 8 bytes, family code, serial nr, crc 
+		n=Read();			// n = the read byte, one of 8
+		buffer[i]=n;
+	}
+}
+
 /* ----------------------------------- */
 /* this is the way to store a sentence */
 /* ----------------------------------- */
+
 // - temp is
 char text1( char x) {
    skip(x); /* internal function CC5x.  */
@@ -365,39 +412,6 @@ void lcd_init( void ) {
   lcd_putchar(0b00000110);  /* increment mode, shift off         */
   RS = 1;    // LCD in character-mode
              // initialization is done!
-}
-
-// must be run once before using the display - original version MJ
-void lcd_init_2( void ) {
-  delay(60);  // give LCD time to settle
-  /* Function set */
-  RS = 0;  // LCD in command-mode
-  //  0010.xxxx   4-bit mode
-  //  0010.xxxx   4-bit mode
-  lcd_putchar(0b0010.0010); 
-  delay(10);
-  //  0010.xxxx   4-bit mode
-  // The display is actual two lines after each other 
-  //  1.0.xxxxxx  two line.display off.xxxxxx
-  lcd_putchar(0b0010.1.0.00); 
-  delay(10);
-
-  /* Display ON/OFF Control  */
-  //  0000.xxxx
-  //  1.1.0.0.xxxx    1.display on.cursor off.blink off.xxxx
-  lcd_putchar(0b0000.1.1.0.0);
-  delay(10);
-  /* Display clear  */
-  //  0000.xxxx
-  //  0001.xxxx
-  lcd_putchar(0b0000.0001);
-  delay(10);
-  /* Entry mode set  */
-  //  0000.xxxx
-  //  01.1.0.xxxx   01.increment mode.shift off.xxxx
-  lcd_putchar(0b0000.01.1.0);
-  delay(10);
-  // initialization is done!
 }
 
  
@@ -455,6 +469,65 @@ char getchar_eedata( char address ) {
       RD = 0;
       return temp;     /* data to be read                  */
       /* End of read EEPROM-data sequence                  */  
+}
+
+char hexchar(char hex){
+	char result;
+
+	switch(hex){
+		case 0:
+			result='0';
+			break;
+		case 1:
+			result='1';
+			break;
+		case 2:
+			result='2';
+			break;
+		case 3:
+			result='3';
+			break;
+		case 4:
+			result='4';
+			break;
+		case 5:
+			result='5';
+			break;
+		case 6:
+			result='6';
+			break;
+		case 7:
+			result='7';
+			break;
+		case 8:
+			result='8';
+			break;
+		case 9:
+			result='9';
+			break;
+		case 10:
+			result='A';
+			break;
+		case 11:
+			result='B';
+			break;
+		case 12:
+			result='C';
+			break;
+		case 13:
+			result='D';
+			break;
+		case 14:
+			result='E';
+			break;
+		case 15:
+			result='F';
+			break;
+		default:
+			result='*';
+	}
+
+return result;
 }
 
 //Flash LED n times 	
@@ -523,7 +596,7 @@ DS18B20(2)-|RB0              RB7/PGD|---    PK2(4)
 	D4  	@ PORTA.0 	Pin17	//
 	
 	MENU 	@ PORTB.1
-	REDLED 	@ PORTB.4 (2)			// The REDLED symbolizes a fan
+	REDLED 	@ PORTB.4 			// The REDLED symbolizes a fan
 	S1 		@ PORTB.6			// Increase highest temp allowed
 	S3 		@ PORTB.7			// Decrease highest temp allowed
 	
