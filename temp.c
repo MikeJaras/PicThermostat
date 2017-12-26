@@ -118,9 +118,10 @@ void main( void){
 	char t1,t2;
 						// Use EEPROM
 	fantemp=getchar_eedata(0);
-	if (fantemp==255)	// 0xFF is value when chip is programmed.
+	if (fantemp==255 || fantemp==0) {	// 0xFF is value when chip is programmed.
 		fantemp=20;
-
+		savetoeeprom=1;
+	}
 	
 	OPTION.7 = 0;     // internal pullup resistors on 
 
