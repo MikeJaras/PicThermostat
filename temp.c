@@ -38,7 +38,7 @@
 
 
 bit savetoeeprom;
-char fantemp;			// Global variable to store highest temperature
+char fantemp;			// Global variable to trigger temperature
 // char lowtemp;			// Lowest, see above (not yet implemented)
 
  
@@ -97,12 +97,13 @@ char text4( char );
 char hexchar( char );
 void blink(uns8 blinkN);
 void problem( void );
+void cleanzeroes( void );
 uns8 p;							//Variable used in blink
 char getchar_eedata( char address );
 void putchar_eedata( char data, char address );
 
 char buffer[12];		// Used to store 12 bytes read from DS18B20
-char temperature;		// Same as above, only need one of these global. Future improvement.
+int temperature;		// Same as above, only need one of these global. Future improvement.
 char s[11];				// S[11] is used by most of the string handling routines, see also ascnum.c
 #include "math16.h"
 #include "ascnum.c"		// String handling - chartoa inttoa unslongtoa longtoa atochar
@@ -111,12 +112,14 @@ char s[11];				// S[11] is used by most of the string handling routines, see als
  
 void main( void){
 	CM0=1; CM1=1; CM2=1;	// no comparators on
-	char highest=22;				
-	char lowest=22;
+	int testing;
+	int highest=22;				
+	int lowest=22;
 	char i,n,x;			// Some unused variables, needs cleaning up.
 	char lsb,msb;
 	char t1,t2;
-						// Use EEPROM
+	char romcode=0;
+	// Use EEPROM
 	fantemp=getchar_eedata(0);
 	if (fantemp==255 || fantemp==0) {	// 0xFF is value when chip is programmed.
 		fantemp=20;
@@ -160,6 +163,15 @@ void main( void){
 		
 		readtemp();						// Get temperature
 
+		// buffer[1]=0b1111.1111;		// test negative value
+		// buffer[0]=0b0101.0000;		// 1111.1111.0101.0000 -> -10
+		// buffer[1]=0b0000.0000;		// test zero value
+		// buffer[0]=0b0001.0000;		// 
+		// buffer[1]=0b1111.1111;		// test -0.5 value
+		// buffer[0]=0b1111.1000;		// 1111.1111.1111.1000 -> -0.5 
+									// 1111.1111.1110.1000 -> -1.5
+
+
 		if(MENU){						// If NOT menu button pressed; 	display main menu
 
 			RS = 0;  					// LCD in command-mode
@@ -181,10 +193,8 @@ void main( void){
 
 			chartoa(fantemp);			// Convert fantemp to ascii
 			lcd_putchar('+');			// Plus sign. 
-										// Future improvement: logic to determine negative temperatures
-
-			for(i=1; i<3; i++){			// Don't display leading zero (i=1)
-										// Need registered Knudsen Compiler for this. ???
+			// cleanzeroes();
+			for(i=1; i<3; i++){			// Display temperature
 				lcd_putchar(s[i]);  
 			}
 			
@@ -197,47 +207,53 @@ void main( void){
 		else{							// If Menu pressed, display max/min temperatures
 			RS = 0;						// LCD in command-mode
 			lcd_putchar(0x02);			// Reposition to beginning of first line
+			lcd_putchar(0x01);			// Clear screen
 			RS=1;
+
 			for(i=0; i<8; i++) 
 			   lcd_putchar(text3(i));	// Display "Highest:"
 
-			chartoa(highest);
-			lcd_putchar('+');			// Future improvement here too...
-			for(i=1; i<3; i++)
-			   lcd_putchar(s[i]);  		// Future improvement... 
-										// negative/positive? Need registered Knudsen.
+			inttoa(highest);
+			// lcd_putchar('+');	
+			cleanzeroes();
+			for(i=1; i<4; i++)
+			   lcd_putchar(s[i]);  		
+
 			lcd_putchar('.');
 			lcd_putchar('0');
-			lcd_putchar(0b11011111);	//Centigrade character
+			lcd_putchar(0b11011111);	// Centigrade character
 			lcd_putchar('C');
-			lcd_putchar(' ');
+
 			RS = 0;  					// LCD in command-mode
 			lcd_putchar(0xC0);			// Reposition to beginning of second line
 			RS=1;
+
 			for(i=0; i<8; i++) 
 			  lcd_putchar(text4(i));	// Display "Lowest: "
 
-			chartoa(lowest);			// Convert char to ascii
-			lcd_putchar('+');			
-			for(i=1; i<3; i++)			// Future improvement... negative/positive?
+			inttoa(lowest);				// Convert int to ascii
+			// lcd_putchar('+');	
+			cleanzeroes();
+			for(i=1; i<4; i++)			
 			   lcd_putchar(s[i]);  
 
 			lcd_putchar('.');
 			lcd_putchar('0');
 			lcd_putchar(0b11011111);	//Centigrade character
 			lcd_putchar('C');
-			// lcd_putchar(' ');
 			
 			// print rom code
-			if(1) {
-				delay(250);			//
+			if(romcode) {					// 1->show rom code
+				delay(250);			// 
 				delay(250);     	//
+				delay(250);			//
 				delay(250);			//
 				
 				readromcode();
 					
 				RS = 0;  					// LCD in command-mode
 				lcd_putchar(0x02);			// Reposition to beginning of first line
+				lcd_putchar(0x01);			// Clear screen
 				RS=1;
 
 				for(x=0; x<8; x++){			// Display 6 byte rom code"
@@ -253,14 +269,20 @@ void main( void){
 				lcd_putchar(0xC0);			// Reposition to beginning of second line
 				RS=1;
 				
-				for(i=0; i<16; i++) 
-				  lcd_putchar(' ');	//
-		  
-				delay(250);			//
-				delay(250);     	//
-				delay(250);			//
+				int testing=-005;
 				
+				inttoa(testing);			//' '=0x20 '-'=0x2D  '0'=0x30 '+'=0x2B
+				cleanzeroes();
+				
+				for(i=0; i<4; i++) 
+						lcd_putchar(s[i]);	//
+				  // lcd_putchar(' ');		//
+
 			}
+			delay(250);			//
+			delay(250);     	//
+			delay(250);			//
+				
 		}
 
 		if(temperature>highest)		
@@ -320,38 +342,50 @@ void print_temp() {
 
 	RS = 1;  // LCD in character-mode
 	char i;
-	if(buffer[1].3==1)					// The bit determines the sign of the temperature
-	{	lcd_putchar('-');				// Display - sign
-		temperature=buffer[0];			// The temperature is in the LSB
-		temperature=(temperature^0xFF);	// Complement (flip zero to one and vice versa) of the negative temperature
-		temperature=temperature>>1;		// Divide the result by 2
-		temperature +=1;
-		chartoa(temperature);		
-
-		// display the 8 char text1() sentence
-		for(i=0; i<3; i++) 
-			lcd_putchar(s[i]);
-	}
-	else {
+	
+	// Test for negative value
+	if(buffer[1].3==1) {					// The bit determines the sign of the temperature
 		lsb=buffer[0]>>4;
 		msb=buffer[1]<<4;
 		temperature=msb+lsb;
-
-		lcd_putchar('+');				// Display + sign
-		chartoa(temperature);			// Convert char to ascii
-		for(i=1; i<3; i++) 		
+		// temperature=temperature>>1;		// Divide the result by 2
+		temperature +=1;
+		inttoa(temperature);	
+		// s[0]='-';
+		
+		cleanzeroes();
+		// display the 8 char text1() sentence
+		// lcd_putchar('-');				// Display - sign
+		for(i=1; i<4; i++) 
+			lcd_putchar(s[i]);
+	}
+	else { 	// If positive value.
+		lsb=buffer[0]>>4;
+		msb=buffer[1]<<4;
+		temperature=msb+lsb;
+		// lcd_putchar('+');				// Display + sign
+		inttoa(temperature);			// Convert char to ascii
+		cleanzeroes();
+		for(i=1; i<4; i++) 		
 			lcd_putchar(s[i]);  
 
 		//Display the temperature on the LCD
 	}
-	 
-	if(buffer[0].3==1)						// 0000 0001 = 0.5 C
-		{
+
+	
+// debug
+// putchar_eedata(s[0],01);
+// putchar_eedata(s[1],02);
+// putchar_eedata(s[2],03);
+// putchar_eedata(s[3],04);
+// putchar_eedata(s[4],05);
+	
+	// Test for 0.5 value. 
+	if(buffer[0].3==1) {					// 0b0000.1000 = 0.5 C
 			lcd_putchar('.');
 			lcd_putchar('5');
 		}
-	else									// 0000 0000 = 0.0 C
-		{
+	else {									// 0b0000.0000 = 0.0 C
 			lcd_putchar('.');
 			lcd_putchar('0');
 		}
@@ -530,6 +564,23 @@ char hexchar(char hex){
 
 return result;
 }
+
+void cleanzeroes( void ){
+	if(s[0]=='-' && s[1]=='0' && s[2]!='0'){				// Catch -0XX
+		s[0]=' '; s[1]='-';	}	  							// ->     -XX    
+	if(s[0]=='-' && s[1]=='0' && s[2]=='0'){				// Catch -00X
+		s[0]=' '; s[1]=' '; s[2]='-'; }						// ->      -X
+	if(s[0]=='+' && s[1]=='0' && s[2]=='0' && s[3]=='0'){	// Catch +000
+		s[0]=' '; s[1]=' '; s[2]='-'; }						// ->     +00
+	if(s[0]==' ' && s[1]=='+' && s[2]=='0' && s[3]=='0'){	// Catch _+00
+		s[0]=' '; s[1]='+'; }								// ->      +0
+	if(s[0]=='+' && s[1]=='0' && s[2]=='0' && s[3]!='0'){	// Catch +00X
+		s[0]=' '; s[1]='+'; }								// ->     +0X
+	if(s[0]=='+' && s[1]=='0' && s[2]!='0' && s[3]!='0'){	// Catch +0XX
+		s[0]=' '; s[1]='+'; }								// ->     +XX
+	if(s[0]=='+' && s[1]=='0' && s[2]!='0' && s[3]=='0'){	// Catch +0X0
+		s[0]=' '; s[1]='+'; }								// ->     +XX
+}	
 
 //Flash LED n times 	
 void blink(uns8 blinkN)	{
